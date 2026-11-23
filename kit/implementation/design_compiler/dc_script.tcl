@@ -35,6 +35,12 @@ change_names -rules verilog -hier
 uniquify
 write -format verilog -hier -o ${REPORT_DIR}/netlist.v
 report_timing -nosplit -max_paths 10 > ${REPORT_DIR}/timing.rpt
+# The accelerator inside the SoC: worst path ending in it, starting in it, inside it.
+set acc_d [filter_collection [all_registers -data_pins] "full_name =~ *_peripherals_i/*"]
+set acc_c [filter_collection [all_registers -clock_pins] "full_name =~ *_peripherals_i/*"]
+report_timing -nosplit -to $acc_d > ${REPORT_DIR}/accel_timing.rpt
+report_timing -nosplit -from $acc_c >> ${REPORT_DIR}/accel_timing.rpt
+report_timing -nosplit -from $acc_c -to $acc_d >> ${REPORT_DIR}/accel_timing.rpt
 report_area -hier -nosplit > ${REPORT_DIR}/area.rpt
 report_constraints > ${REPORT_DIR}/constraints.rpt
 report_clock_gating > ${REPORT_DIR}/clock_gating.rpt

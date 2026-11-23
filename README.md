@@ -9,7 +9,8 @@ MSc lab, groups of 3. Last of four activities.
 | Lab 2 | optimise it — retiming, pipelining, folding, arithmetic — and compare PPA against Lab 1 | done |
 | **Lab 3** | integrate it into X-HEEP over OBI+REG, write the C driver, measure the real speedup | *this repository* |
 
-This repository holds only a kit. You work in VS Code with the **X-HEEP IDE**
+This repository holds a kit and the report you fill in ([REPORT.md](REPORT.md),
+section 11). You work in VS Code with the **X-HEEP IDE**
 extension: it creates your X-HEEP project, checks your tools, and builds, runs
 and debugs your applications; the kit adds the Lab 0 applications, the
 testbench and the implementation flow to that project.
@@ -531,7 +532,9 @@ Run long jobs in `tmux`: a dropped connection kills them. Pass the same
 
 - **Synthesis** writes `implementation/synthesis/last_output/report/`: netlist,
   SDC, SDF, timing, area, power. The memory is 4 banks of 32 KiB, each made of two
-  IHP `2048x64` macros; the pads are IHP `sg13g2_IOPad*`.
+  IHP `2048x64` macros; the pads are IHP `sg13g2_IOPad*`. `accel_timing.rpt`
+  has the worst paths that end in your accelerator, start in it, and stay
+  inside it (everything under `<name>_peripherals_i`).
 - **Gate-level simulations** run the netlist with its SDF delays and the clock
   at `CLK_PERIOD`; the firmware is loaded straight into the SRAM macros. The
   cycle counts must be the ones of the RTL simulation, the checksum too. Use
@@ -540,7 +543,8 @@ Run long jobs in `tmux`: a dropped connection kills them. Pass the same
 - **Place and route** builds the pad ring (die `PNR_DIE_W` x `PNR_DIE_H` µm,
   default 3800 x 3000), places the macros and the cells, builds the clock tree,
   routes and writes `implementation/innovus/artefacts/`: `export/` (netlist,
-  SDF, SPEF, GDS) and `reports/` (timing, DRC, area, one set per step).
+  SDF, SPEF, GDS) and `reports/` (timing, DRC, area, one set per step;
+  `08_export.accel_timing.rpt` is `accel_timing.rpt` after the layout).
 - **Power** reads the `waves-0.vcd` of the last gate-level run of that `STAGE`
   (`postsynthesis` or `postlayout`, `WINDOW=N` for `waves-N.vcd`) and writes
   `implementation/primepower/reports/`, typical corner. Only the scopes of
@@ -550,3 +554,25 @@ Run long jobs in `tmux`: a dropped connection kills them. Pass the same
   there are no wires yet, and the wire load models overestimate a lot. For
   the CORDIC NCO window at 50 MHz: 0.35 mW post-layout, 12.5 mW
   post-synthesis.
+
+## 11. What you hand in
+
+- **[REPORT.md](REPORT.md)**, every `____` filled with your own measurements:
+  speedup, area and timing of your accelerator against the rest of the SoC,
+  throughput per watt and per mm², each against what Labs 0, 1 and 2 promised.
+- **Your project** `<name>/`, with the accelerator integrated:
+  `hw/vendor/<accel>.vendor.hjson` on the Lab 2 tag you report, the wrapper,
+  the `.vlt`, `config/mcu-gen-config.py`, `<name>_peripherals.sv.tpl`, the
+  driver and the `config.h` of your application.
+- A **GitHub release** tagged exactly `lab3-delivery`, by the deadline
+  announced on the course page:
+
+  ```bash
+  git push
+  gh release create lab3-delivery --title "Lab 3" --notes "<accel> in X-HEEP"
+  ```
+
+Do not commit the outputs of the tools (`build/`, `implementation/synthesis/`,
+`implementation/innovus/artefacts/`, ...): the kit's `.gitignore` keeps them
+out. We read the report, check out `lab3-delivery`, run your application and
+your flow: be ready to reproduce any number.

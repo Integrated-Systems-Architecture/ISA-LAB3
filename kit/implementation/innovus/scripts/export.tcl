@@ -134,6 +134,12 @@ redirect -tee $REPORT_DIR/08_export.log {
   report_power         > $REPORT_DIR/08_export.power_estimate.rpt
   report_timing -nworst 10        > $REPORT_DIR/08_export.timing_setup.rpt
   report_timing -nworst 10 -early > $REPORT_DIR/08_export.timing_hold.rpt
+  # The accelerator inside the SoC: worst path ending in it, starting in it, inside it.
+  set acc_d [filter_collection [all_registers -data_pins] "full_name =~ *_peripherals_i/*"]
+  set acc_c [filter_collection [all_registers -clock_pins] "full_name =~ *_peripherals_i/*"]
+  report_timing -to $acc_d                > $REPORT_DIR/08_export.accel_timing.rpt
+  report_timing -from $acc_c              >> $REPORT_DIR/08_export.accel_timing.rpt
+  report_timing -from $acc_c -to $acc_d   >> $REPORT_DIR/08_export.accel_timing.rpt
 
   # --- exports ----------------------------------------------------------
   set OUT $design(EXPORT_DIR)
