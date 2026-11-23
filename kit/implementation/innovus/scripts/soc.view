@@ -1,0 +1,18 @@
+create_library_set -name libset_slow -timing $design(libs_slow)
+create_library_set -name libset_typ  -timing $design(libs_typ)
+create_library_set -name libset_fast -timing $design(libs_fast)
+
+foreach c {slow typ fast} {
+  create_opcond -name opcond_$c -process 1.0 \
+    -voltage [lindex $design(opcond_$c) 0] -temperature [lindex $design(opcond_$c) 1]
+  create_timing_condition -name tc_$c -library_sets libset_$c -opcond opcond_$c
+  create_rc_corner -name rc_$c -temperature [lindex $design(opcond_$c) 1]
+  create_delay_corner -name dc_$c -early_timing_condition tc_$c -late_timing_condition tc_$c \
+    -early_rc_corner rc_$c -late_rc_corner rc_$c
+}
+
+create_constraint_mode -name func_mode -sdc_files [list $design(default_sdc)]
+create_analysis_view -name setup_slow -constraint_mode func_mode -delay_corner dc_slow
+create_analysis_view -name hold_fast  -constraint_mode func_mode -delay_corner dc_fast
+create_analysis_view -name view_typ   -constraint_mode func_mode -delay_corner dc_typ
+set_analysis_view -setup {setup_slow} -hold {hold_fast}

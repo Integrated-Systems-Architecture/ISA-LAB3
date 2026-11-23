@@ -1,0 +1,10 @@
+--- a/hw/fpga/xheep_fpga_support/core-v-mini-mcu-fpga.core
++++ b/hw/fpga/xheep_fpga_support/core-v-mini-mcu-fpga.core
+@@ -64,6 +64,7 @@
+ 
+   ip-fpga-aup-zu3:
+     files:
++    - scripts/aup-zu3/generate_sram.tcl
+     - scripts/aup-zu3/xilinx_generate_clk_wizard.tcl
+     file_type: tclSource
+ 

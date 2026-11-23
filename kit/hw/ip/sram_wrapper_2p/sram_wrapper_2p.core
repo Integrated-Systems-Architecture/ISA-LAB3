@@ -1,0 +1,15 @@
+CAPI=2:
+
+name: "isa:lab3:sram_wrapper_2p"
+description: "Two-port SRAM (one write port, one read port): behavioural model for simulation and FPGA"
+
+filesets:
+  rtl:
+    files:
+    - sram_wrapper_2p.sv
+    file_type: systemVerilogSource
+
+targets:
+  default:
+    filesets:
+    - "!target_asic_synthesis ? (!target_sim_postsynthesis ? (!target_sim_postlayout ? (rtl)))"

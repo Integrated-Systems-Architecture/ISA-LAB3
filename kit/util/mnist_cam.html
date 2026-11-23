@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MNIST over UART</title>
+<style>
+  :root { --bg: #f6f6f4; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffff; --line: #d9d9d4; --accent: #2f6fdf; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ececea; --muted: #9a9a95; --card: #20201f; --line: #3a3a37; --accent: #7aa7ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 18px; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .grow { flex: 1 1 520px; min-width: 0; }
+  .side { flex: 0 1 300px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  button, label.btn { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 7px;
+    padding: 7px 12px; font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  input[type=number] { width: 90px; padding: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); }
+  #stage { position: relative; width: 100%; border: 1px dashed var(--line); border-radius: 8px; min-height: 260px;
+    display: grid; place-items: center; color: var(--muted); overflow: hidden; touch-action: none; }
+  #photo { max-width: 100%; display: none; }
+  #sel { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); display: none; }
+  video { max-width: 100%; display: none; border-radius: 8px; }
+  #preview { width: 224px; height: 224px; image-rendering: pixelated; border-radius: 6px; border: 1px solid var(--line); background: #000; }
+  .pred { font-size: 64px; font-weight: 700; line-height: 1; margin: 8px 0 2px; }
+  .muted { color: var(--muted); }
+  #log { font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; max-height: 160px; overflow: auto; color: var(--muted); margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>MNIST over UART</h1>
+  <p class="sub">Photograph a handwritten digit, crop it, send it to your X-HEEP on the FPGA (app built with MNIST_UART 1).
+    Needs Chrome or Edge (Web Serial).</p>
+
+  <div class="row">
+    <section class="card grow">
+      <div class="bar">
+        <label class="btn">Open photo<input id="file" type="file" accept="image/*" hidden></label>
+        <button id="camOn">Webcam</button>
+        <button id="snap" disabled>Take picture</button>
+        <span class="muted">or drop an image below, then drag a box around the digit</span>
+      </div>
+      <div id="stage"><span id="hint">No image yet</span><img id="photo" alt=""><video id="video" autoplay playsinline muted></video><div id="sel"></div></div>
+    </section>
+
+    <section class="card side">
+      <div class="bar">
+        <label>Baud <input id="baud" type="number" value="9600"></label>
+        <button id="connect">Connect</button>
+      </div>
+      <canvas id="preview" width="28" height="28"></canvas>
+      <div class="bar" style="margin-top:10px">
+        <button id="send" class="primary" disabled>Send to the board</button>
+      </div>
+      <div class="muted">Prediction</div>
+      <div class="pred" id="pred">–</div>
+      <div class="muted" id="cycles">&nbsp;</div>
+      <pre id="log"></pre>
+    </section>
+  </div>
+</main>
+
+<script>
+// Grayscale image (Float32 0..1, white paper or dark background) -> 28x28 uint8 in the MNIST format:
+// bright digit on black, fitted in 20x20, centred by its centre of mass.
+function toMnist(gray, w, h) {
+  // Robust levels: the paper is the median, the ink the far tail on the other side.
+  const hist = new Array(1024).fill(0);
+  for (const v of gray) hist[Math.max(0, Math.min(1023, Math.floor(v * 1023)))]++;
+  const pct = q => { let n = 0; for (let i = 0; i < 1024; i++) { n += hist[i]; if (n >= q * gray.length) return i / 1023; } return 1; };
+  const lo = pct(0.005), med = pct(0.5), hi = pct(0.995);
+  const invert = med - lo > hi - med;
+  const paper = med, ink = invert ? lo : hi;
+  const span = Math.abs(ink - paper);
+  if (span < 0.05) throw new Error("no digit found in the selection");
+  const g = new Float32Array(gray.length);
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    const v = Math.min(1, Math.max(0, (invert ? paper - gray[i] : gray[i] - paper) / span));
+    g[i] = v > 0.35 ? (v - 0.35) / 0.65 : 0;
+    if (g[i] > 0) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  }
+  if (x1 < 0) throw new Error("no digit found in the selection");
+
+  // Box-filter the bounding box down so its longer side is 20 px.
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1, s = 20 / Math.max(bw, bh);
+  const tw = Math.max(1, Math.round(bw * s)), th = Math.max(1, Math.round(bh * s));
+  const small = new Float32Array(tw * th);
+  for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) {
+    const sx0 = x0 + tx * bw / tw, sx1 = x0 + (tx + 1) * bw / tw;
+    const sy0 = y0 + ty * bh / th, sy1 = y0 + (ty + 1) * bh / th;
+    let acc = 0, area = 0;
+    for (let y = Math.floor(sy0); y < Math.ceil(sy1); y++) for (let x = Math.floor(sx0); x < Math.ceil(sx1); x++) {
+      const a = (Math.min(x + 1, sx1) - Math.max(x, sx0)) * (Math.min(y + 1, sy1) - Math.max(y, sy0));
+      if (a > 0) { acc += a * g[y * w + x]; area += a; }
+    }
+    small[ty * tw + tx] = area ? acc / area : 0;
+  }
+
+  // Place it so the centre of mass lands on (14, 14).
+  let m = 0, mx = 0, my = 0;
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { const v = small[y * tw + x]; m += v; mx += v * x; my += v * y; }
+  const ox = Math.round(14 - (m ? mx / m : tw / 2) - 0.5), oy = Math.round(14 - (m ? my / m : th / 2) - 0.5);
+  const out = new Uint8Array(784);
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+    const X = x + ox, Y = y + oy;
+    if (X >= 0 && X < 28 && Y >= 0 && Y < 28) out[Y * 28 + X] = Math.round(255 * Math.min(1, small[y * tw + x]));
+  }
+  return out;
+}
+
+if (typeof module !== "undefined") module.exports = { toMnist };
+
+if (typeof document !== "undefined") {
+  const $ = id => document.getElementById(id);
+  const photo = $("photo"), stage = $("stage"), sel = $("sel"), video = $("video"), preview = $("preview");
+  let box = null, digit = null, port = null, writer = null, lines = [];
+
+  const log = msg => { $("log").textContent += msg + "\n"; $("log").scrollTop = 1e9; };
+
+  function showImage(src) {
+    photo.onload = () => { $("hint").style.display = "none"; video.style.display = "none"; photo.style.display = "block";
+      box = null; sel.style.display = "none"; update(); };
+    photo.src = src;
+  }
+  $("file").onchange = e => e.target.files[0] && showImage(URL.createObjectURL(e.target.files[0]));
+  stage.ondragover = e => e.preventDefault();
+  stage.ondrop = e => { e.preventDefault(); const f = e.dataTransfer.files[0]; f && showImage(URL.createObjectURL(f)); };
+
+  $("camOn").onclick = async () => {
+    try {
+      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      photo.style.display = "none"; $("hint").style.display = "none"; video.style.display = "block"; $("snap").disabled = false;
+    } catch (e) { log("webcam: " + e.message); }
+  };
+  $("snap").onclick = () => {
+    const c = document.createElement("canvas");
+    c.width = video.videoWidth; c.height = video.videoHeight;
+    c.getContext("2d").drawImage(video, 0, 0);
+    video.srcObject.getTracks().forEach(t => t.stop());
+    $("snap").disabled = true;
+    showImage(c.toDataURL("image/png"));
+  };
+
+  // Crop box, in photo pixels.
+  let drag = null;
+  const toPhoto = e => {
+    const r = photo.getBoundingClientRect();
+    return [(e.clientX - r.left) * photo.naturalWidth / r.width, (e.clientY - r.top) * photo.naturalHeight / r.height];
+  };
+  stage.onpointerdown = e => { if (photo.style.display !== "block") return; drag = toPhoto(e); stage.setPointerCapture(e.pointerId); };
+  stage.onpointermove = e => {
+    if (!drag) return;
+    const [x, y] = toPhoto(e);
+    box = [Math.min(drag[0], x), Math.min(drag[1], y), Math.abs(x - drag[0]), Math.abs(y - drag[1])];
+    const r = photo.getBoundingClientRect(), s = stage.getBoundingClientRect(), k = r.width / photo.naturalWidth;
+    Object.assign(sel.style, { display: "block", left: (r.left - s.left + box[0] * k) + "px", top: (r.top - s.top + box[1] * k) + "px",
+      width: box[2] * k + "px", height: box[3] * k + "px" });
+  };
+  stage.onpointerup = () => { if (drag) { drag = null; if (box && (box[2] < 8 || box[3] < 8)) box = null; update(); } };
+
+  function update() {
+    const [bx, by, bw, bh] = box || [0, 0, photo.naturalWidth, photo.naturalHeight];
+    const w = Math.max(1, Math.round(bw)), h = Math.max(1, Math.round(bh));
+    const scale = Math.min(1, 400 / Math.max(w, h));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+    const ctx = c.getContext("2d");
+    ctx.drawImage(photo, bx, by, w, h, 0, 0, c.width, c.height);
+    const px = ctx.getImageData(0, 0, c.width, c.height).data;
+    const gray = new Float32Array(c.width * c.height);
+    for (let i = 0; i < gray.length; i++) gray[i] = (0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2]) / 255;
+    try { digit = toMnist(gray, c.width, c.height); } catch (e) { digit = null; log(e.message); }
+    const img = preview.getContext("2d").createImageData(28, 28);
+    for (let i = 0; i < 784; i++) { const v = digit ? digit[i] : 0; img.data.set([v, v, v, 255], 4 * i); }
+    preview.getContext("2d").putImageData(img, 0, 0);
+    $("send").disabled = !(digit && writer);
+  }
+
+  $("connect").onclick = async () => {
+    if (!("serial" in navigator)) { log("This browser has no Web Serial: use Chrome or Edge."); return; }
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: Number($("baud").value) });
+      writer = port.writable.getWriter();
+      $("connect").disabled = true; log("connected");
+      readLoop(); update();
+    } catch (e) { log("serial: " + e.message); }
+  };
+
+  async function readLoop() {
+    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let n;
+      while ((n = buf.indexOf("\n")) >= 0) { const l = buf.slice(0, n).trim(); buf = buf.slice(n + 1); if (l) { log(l); lines.push(l); } }
+    }
+  }
+
+  $("send").onclick = async () => {
+    $("send").disabled = true; $("pred").textContent = "…"; $("cycles").innerHTML = "&nbsp;";
+    lines = [];
+    await writer.write(digit);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 30000) {
+      const hit = lines.find(l => l.startsWith("pred="));
+      if (hit) {
+        const p = /pred=(\d+)/.exec(hit), c = /cycles=(\d+)/.exec(hit);
+        $("pred").textContent = p ? p[1] : "?";
+        $("cycles").textContent = c ? Number(c[1]).toLocaleString() + " cycles" : "";
+        break;
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    if ($("pred").textContent === "…") $("pred").textContent = "?";
+    $("send").disabled = false;
+  };
+}
+</script>
+</body>
+</html>
