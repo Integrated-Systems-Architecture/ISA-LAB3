@@ -54,15 +54,29 @@ What you had to change to make it work, and why. Two or three sentences.
 
 ## 3. Speedup
 
-Verilator, `SIZE SMALL`. "Kernel cycles" is the line of the profile table for
-the region your accelerator replaces.
+Verilator, `SIZE SMALL`, `RUN_ALL`: the `[profile]` table with `USE_ACCEL 0`
+and with `USE_ACCEL 1`, one row per region, `total` last. Speedup = software
+cycles / accelerator cycles. Say what it means: above 1, "N× faster"; below 1,
+"N× slower", with N = accelerator cycles / software cycles. Put the regions
+your accelerator replaces in **bold**.
 
-| run | kernel cycles | `total` cycles | check |
-|---|---|---|---|
-| `RUN_ALL`, software | ____ | ____ | ____ |
-| `RUN_ALL`, accelerator | ____ | ____ | ____ |
-| `R_____`, software | ____ | ____ | `checksum=____` |
-| `R_____`, accelerator | ____ | ____ | `checksum=____` |
+| region | software cycles | accelerator cycles | speedup | |
+|---|---|---|---|---|
+| ____ | ____ | ____ | ____ | ____ × faster / slower |
+| ____ | ____ | ____ | ____ | ____ × faster / slower |
+| ____ | ____ | ____ | ____ | ____ × faster / slower |
+| `total` | ____ | ____ | ____ | ____ × faster / slower |
+| check | PASS / FAIL | PASS / FAIL | | |
+
+> With our accelerator, the whole application (`SIZE SMALL`) runs ____ ×
+> faster / slower; ____ (the kernel) runs ____ × faster / slower.
+
+The region your accelerator replaces, alone (`RUN R_____`, synthetic data):
+
+| | region cycles | checksum |
+|---|---|---|
+| software | ____ | `0x____` |
+| accelerator | ____ | `0x____` |
 
 | | measured | projected (Lab 1 §7.1) |
 |---|---|---|
@@ -91,6 +105,24 @@ with the CPU.
 | | Lab 2 testbench | in the SoC |
 |---|---|---|
 | Cycles per item | ____ | ____ |
+
+> ____
+
+**3.3 On the FPGA.** The same application with `SIZE LARGE` and `RUN_ALL` on
+the AUP-ZU3 (README section 9), the `[profile]` table read from the UART.
+
+| run | kernel cycles | `total` cycles | check |
+|---|---|---|---|
+| `SIZE LARGE`, software | ____ | ____ | ____ |
+| `SIZE LARGE`, accelerator | ____ | ____ | ____ |
+
+| | `SMALL`, Verilator | `LARGE`, FPGA |
+|---|---|---|
+| Kernel speedup | ____ × | ____ × |
+| Application speedup | ____ × | ____ × |
+| Kernel share `p`, software | ____ % | ____ % |
+
+Do the speedups change with the size? Why?
 
 > ____
 

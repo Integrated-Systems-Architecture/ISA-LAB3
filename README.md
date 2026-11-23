@@ -558,7 +558,8 @@ Run long jobs in `tmux`: a dropped connection kills them. Pass the same
 ## 11. What you hand in
 
 - **[REPORT.md](REPORT.md)**, every `____` filled with your own measurements:
-  speedup, area and timing of your accelerator against the rest of the SoC,
+  speedup in simulation and on the FPGA, area and timing of your accelerator
+  against the rest of the SoC,
   throughput per watt and per mm², each against what Labs 0, 1 and 2 promised.
 - **Your project** `<name>/`, with the accelerator integrated:
   `hw/vendor/<accel>.vendor.hjson` on the Lab 2 tag you report, the wrapper,
